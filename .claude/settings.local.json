@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($S = \"$env:TEMP\\\\claude\\\\c--Users-ataberk-yayla-Desktop-FATKatalog\\\\940e5840-f07e-4883-b70e-5a3d8b3ef1c4\\\\scratchpad\\\\brand\"; $S = \\(Resolve-Path $S\\).Path; & \"$S\\\\img.ps1\" -Op info -In \"$S\\\\r12-1.png\"; & \"$S\\\\img.ps1\" -Op info -In \"$S\\\\r7-1.png\"; & \"$S\\\\img.ps1\" -Op preview -In \"$S\\\\r12-1.png\" -Out \"$S\\\\prev12.png\" -Size 1300; & \"$S\\\\img.ps1\" -Op preview -In \"$S\\\\r7-1.png\" -Out \"$S\\\\prev7.png\" -Size 1300; $S)"
+    ]
+  }
+}

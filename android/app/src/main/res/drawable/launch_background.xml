@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Açılış ekranı (Android 8–11): kurumsal siyah zemin, ortada resmi dikey logo. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/brand_black" />
+    <item
+        android:width="200dp"
+        android:height="156dp"
+        android:drawable="@drawable/splash_logo"
+        android:gravity="center" />
+</layer-list>

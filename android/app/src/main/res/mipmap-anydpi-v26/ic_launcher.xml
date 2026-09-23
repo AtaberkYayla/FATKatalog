@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Resmi logonun küre işareti, kurumsal siyah zemin üzerinde. İşaret 66dp güvenli alanın içinde.
+    Android 13+ temalı ikon (monochrome) katmanı yok: rehberde tek renkli logo sürümü bulunmuyor.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/brand_black" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

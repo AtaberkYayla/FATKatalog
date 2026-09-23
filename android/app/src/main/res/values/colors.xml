@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Yalnızca Dart'ın erişemediği yerler (launcher ikonu, splash) için.
+        Kaynak: DEDEM Mekatronik Kurumsal Kimlik Rehberi. Değerler lib/ui/theme/colors.dart
+        içindeki dedemBlack ile aynı tutulmalıdır. Logo varyasyonu siyah zemin içindir.
+    -->
+    <color name="brand_black">#FF1D1D1B</color>
+</resources>
