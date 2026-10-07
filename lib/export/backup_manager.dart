@@ -101,7 +101,7 @@ class BackupManager {
     final all = await _repository.exportAll();
     final bytes = XlsxWriter.encode(
       sheetName: allProjectsSheetName,
-      header: ProjectRepository.header,
+      header: ProjectRepository.xlsxHeader,
       rows: all.rows,
       headerStyle: _repository.headerStyle,
     );

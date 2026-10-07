@@ -1,21 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../model/label_record.dart';
+import '../../model/pallet_size.dart';
 
-/// Seçilen kayıtlar için palet no sorar.
+/// Palet diyaloğunun sonucu: atanacak palet no ve ölçüsü (`Genişlik x
+/// Uzunluk`, mm). Paleti kaldırmak için ikisi de boş.
+class PalletAssignment {
+  const PalletAssignment({required this.palletNo, this.palletSize = ''});
+
+  const PalletAssignment.remove() : this(palletNo: '');
+
+  final String palletNo;
+  final String palletSize;
+}
+
+/// Seçilen kayıtlar için palet no ve ölçüsünü sorar.
 ///
-/// Döndürür: atanacak palet no, paleti kaldırmak için boş metin, vazgeçilirse
-/// `null`.
-Future<String?> showPalletDialog(
+/// [projectPallets]: projede kullanılmış palet no → ölçüsü (ölçü girilmemişse
+/// boş). Döndürür: atama, vazgeçilirse `null`.
+Future<PalletAssignment?> showPalletDialog(
   BuildContext context, {
   required List<ScanEntry> selected,
-  required Set<String> projectPallets,
+  required Map<String, String> projectPallets,
 }) {
-  return showDialog<String>(
+  return showDialog<PalletAssignment>(
     context: context,
     builder: (_) => _PalletDialog(
       selected: selected,
-      projectPallets: projectPallets.toList()..sort(),
+      projectPallets: projectPallets,
     ),
   );
 }
@@ -24,40 +37,73 @@ class _PalletDialog extends StatefulWidget {
   const _PalletDialog({required this.selected, required this.projectPallets});
 
   final List<ScanEntry> selected;
-  final List<String> projectPallets;
+  final Map<String, String> projectPallets;
 
   @override
   State<_PalletDialog> createState() => _PalletDialogState();
 }
 
 class _PalletDialogState extends State<_PalletDialog> {
-  late final TextEditingController _controller;
+  final _palletNo = TextEditingController();
+  final _width = TextEditingController();
+  final _length = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    // Seçilenlerin hepsi aynı paletteyse onu öner.
+    // Seçilenlerin hepsi aynı paletteyse onu (ve ölçüsünü) öner.
     final pallets = {for (final e in widget.selected) e.palletNo};
-    _controller = TextEditingController(
-      text: pallets.length == 1 ? pallets.single : '',
-    )..addListener(() => setState(() {}));
+    if (pallets.length == 1) {
+      _palletNo.text = pallets.single;
+      final sizes = {for (final e in widget.selected) e.palletSize};
+      if (sizes.length == 1) _setSize(sizes.single);
+    }
+    for (final c in [_palletNo, _width, _length]) {
+      c.addListener(() => setState(() {}));
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _palletNo.dispose();
+    _width.dispose();
+    _length.dispose();
     super.dispose();
   }
 
-  String get _value => _controller.text.trim();
+  void _setSize(String text) {
+    final size = PalletSize.tryParse(text);
+    _width.text = size?.width ?? '';
+    _length.text = size?.length ?? '';
+  }
+
+  String get _value => _palletNo.text.trim();
+
+  PalletSize get _size => PalletSize(_width.text.trim(), _length.text.trim());
+
+  /// Ölçü ya hiç girilmemeli ya da genişlik ve uzunluk birlikte girilmeli.
+  bool get _canSubmit => _value.isNotEmpty && _size.isValid;
 
   void _submit() {
-    if (_value.isNotEmpty) Navigator.of(context).pop(_value);
+    if (!_canSubmit) return;
+    Navigator.of(context)
+        .pop(PalletAssignment(palletNo: _value, palletSize: _size.text));
+  }
+
+  void _pick(String pallet) {
+    _palletNo.value = TextEditingValue(
+      text: pallet,
+      selection: TextSelection.collapsed(offset: pallet.length),
+    );
+    // Palet projede zaten ölçüsüyle biliniyorsa onu getir.
+    final known = widget.projectPallets[pallet] ?? '';
+    if (known.isNotEmpty) _setSize(known);
   }
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
     final count = widget.selected.length;
     final anyHasPallet = widget.selected.any((e) => e.palletNo.isNotEmpty);
     final willOverwrite = _value.isEmpty
@@ -65,6 +111,8 @@ class _PalletDialogState extends State<_PalletDialog> {
         : widget.selected
             .where((e) => e.palletNo.isNotEmpty && e.palletNo != _value)
             .length;
+    final pallets = widget.projectPallets.keys.toList()..sort();
+    final sizeIncomplete = !_size.isValid;
 
     return AlertDialog(
       icon: const Icon(Icons.inventory_2_outlined),
@@ -75,17 +123,52 @@ class _PalletDialogState extends State<_PalletDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
-              controller: _controller,
+              controller: _palletNo,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _submit(),
+              textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
                 labelText: 'Palet No',
                 border: OutlineInputBorder(),
               ),
             ),
-            if (widget.projectPallets.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _SizeField(
+                    controller: _width,
+                    label: 'Genişlik',
+                    textInputAction: TextInputAction.next,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 16, left: 8, right: 8),
+                  child: Text('x'),
+                ),
+                Expanded(
+                  child: _SizeField(
+                    controller: _length,
+                    label: 'Uzunluk',
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: _submit,
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 12),
+              child: Text(
+                sizeIncomplete
+                    ? 'Genişlik ve uzunluğu birlikte girin.'
+                    : 'Palet ölçüsü (mm): Genişlik x Uzunluk',
+                style: text.bodySmall?.copyWith(
+                  color: sizeIncomplete ? theme.colorScheme.error : null,
+                ),
+              ),
+            ),
+            if (pallets.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text('Bu projedeki paletler', style: text.labelLarge),
               const SizedBox(height: 8),
@@ -93,15 +176,11 @@ class _PalletDialogState extends State<_PalletDialog> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final pallet in widget.projectPallets)
+                  for (final pallet in pallets)
                     ChoiceChip(
                       label: Text(pallet),
                       selected: _value == pallet,
-                      onSelected: (_) => _controller.value = TextEditingValue(
-                        text: pallet,
-                        selection:
-                            TextSelection.collapsed(offset: pallet.length),
-                      ),
+                      onSelected: (_) => _pick(pallet),
                     ),
                 ],
               ),
@@ -111,7 +190,7 @@ class _PalletDialogState extends State<_PalletDialog> {
               Text(
                 '$willOverwrite kaydın mevcut paleti değişecek.',
                 style: text.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
+                  color: theme.colorScheme.error,
                 ),
               ),
             ],
@@ -121,7 +200,8 @@ class _PalletDialogState extends State<_PalletDialog> {
       actions: [
         if (anyHasPallet)
           TextButton(
-            onPressed: () => Navigator.of(context).pop(''),
+            onPressed: () =>
+                Navigator.of(context).pop(const PalletAssignment.remove()),
             child: const Text('Paleti kaldır'),
           ),
         TextButton(
@@ -129,10 +209,40 @@ class _PalletDialogState extends State<_PalletDialog> {
           child: const Text('Vazgeç'),
         ),
         FilledButton(
-          onPressed: _value.isEmpty ? null : _submit,
+          onPressed: _canSubmit ? _submit : null,
           child: const Text('Ata'),
         ),
       ],
+    );
+  }
+}
+
+class _SizeField extends StatelessWidget {
+  const _SizeField({
+    required this.controller,
+    required this.label,
+    required this.textInputAction,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final TextInputAction textInputAction;
+  final VoidCallback? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted == null ? null : (_) => onSubmitted!(),
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: 'mm',
+        border: const OutlineInputBorder(),
+      ),
     );
   }
 }

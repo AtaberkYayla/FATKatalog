@@ -67,6 +67,7 @@ class ScanEntry {
     required this.record,
     required this.scannedAt,
     this.palletNo = '',
+    this.palletSize = '',
   });
 
   final LabelRecord record;
@@ -75,16 +76,33 @@ class ScanEntry {
   /// Palet No; okutmadan sonra kullanıcı tarafından atanır, atanmamışsa boş.
   final String palletNo;
 
-  ScanEntry withPallet(String palletNo) =>
-      ScanEntry(record: record, scannedAt: scannedAt, palletNo: palletNo);
+  /// Paletin ölçüsü (mm), `Genişlik x Uzunluk` (bkz. [PalletSize]); palet no ile
+  /// birlikte atanır, girilmemişse boş.
+  final String palletSize;
+
+  /// Palet atar; paleti kaldırırken ([palletNo] boş) ölçü de kalkar.
+  ScanEntry withPallet(String palletNo, {String palletSize = ''}) => ScanEntry(
+        record: record,
+        scannedAt: scannedAt,
+        palletNo: palletNo,
+        palletSize: palletNo.isEmpty ? '' : palletSize,
+      );
 
   /// Boş alanları [other]'dan tamamlanmış kopya; doldurulacak bir şey yoksa
   /// `null`. Okutma zamanı kaydın kendi zamanıdır, dosyadan alınmaz.
+  ///
+  /// Palet ölçüsü yalnızca aynı palete aitse alınır: telefonda A paleti ölçüsüz
+  /// duruyorsa dosyadaki B paletinin ölçüsü A'ya yazılmaz.
   ScanEntry? filledFrom(ScanEntry other) {
+    final filledPallet = palletNo.trim().isEmpty ? other.palletNo : palletNo;
+    final samePallet = filledPallet.trim() == other.palletNo.trim();
     final filled = ScanEntry(
       record: record.fillEmptyFrom(other.record),
       scannedAt: scannedAt,
-      palletNo: palletNo.trim().isEmpty ? other.palletNo : palletNo,
+      palletNo: filledPallet,
+      palletSize: palletSize.trim().isEmpty && samePallet
+          ? other.palletSize
+          : palletSize,
     );
     return filled == this ? null : filled;
   }
@@ -94,10 +112,11 @@ class ScanEntry {
       other is ScanEntry &&
       other.record == record &&
       other.scannedAt == scannedAt &&
-      other.palletNo == palletNo;
+      other.palletNo == palletNo &&
+      other.palletSize == palletSize;
 
   @override
-  int get hashCode => Object.hash(record, scannedAt, palletNo);
+  int get hashCode => Object.hash(record, scannedAt, palletNo, palletSize);
 }
 
 class ProjectSummary {

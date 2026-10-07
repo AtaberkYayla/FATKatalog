@@ -61,11 +61,13 @@ Uygulamanın iç depolaması altında:
 
 - **CSV kaynak veridir**, .xlsx ondan türetilir. Liste ekranları CSV'den yüklenen veriyi gösterir.
 - CSV: UTF-8, ayırıcı `;`, ilk satır başlık. Alanlarda `;`, `"` veya satır sonu varsa standart CSV kaçışı uygulanır.
-- Sütunlar (CSV ve Excel aynı sırada):
-  `Proje No; İş Emri No; Erp Ürün No; Seri No; Üretim Yılı; Poz No; Palet No; Okutma Zamanı`
-- Palet No QR'dan gelmez; okutmadan sonra Proje Detayı'nda atanır, atanmamışsa boş.
+- CSV sütunları (`ProjectRepository.header`):
+  `Proje No; İş Emri No; Erp Ürün No; Seri No; Üretim Yılı; Poz No; Palet No; Okutma Zamanı; Palet Ölçüsü (mm)`
+- Excel sütunları (`ProjectRepository.xlsxHeader`) aynı sütunlardır, yalnızca Palet Ölçüsü Palet No'nun yanındadır:
+  `Proje No; İş Emri No; Erp Ürün No; Seri No; Üretim Yılı; Poz No; Palet No; Palet Ölçüsü (mm); Okutma Zamanı`
+- Palet No ve Palet Ölçüsü QR'dan gelmez; okutmadan sonra Proje Detayı'nda birlikte atanır, atanmamışsa boş. Ölçü tek metin olarak `Genişlik x Uzunluk` (mm), ör. `800 x 1200`; diyalogda iki ayrı alan (ikisi birlikte girilir ya da ikisi de boş). Paleti kaldırmak ölçüyü de kaldırır. İçe aktarmada ölçü yalnızca aynı palete aitse boş alana tamamlanır.
 - **CSV, sütun sırasına değil başlık adlarına göre okunur.** Tanınmayan sütun yok sayılır, eksik sütun boş kabul edilir; hiçbir satır sütun sayısı yüzünden düşürülmez. Böylece yeni sürümün yazdığı dosya eski sürümde de açılır ve **sütun eklemek eski kayıtları kaybettirmez**. Palet No sütunu olmayan eski (7 sütunlu) CSV'ler bu sayede kendiliğinden okunur; o projede ilk yazmada yeni biçime geçer. Başlık tanınmazsa (bozuk dosya) sütun sırasına göre okumaya düşülür.
-- Biçim değiştirirken kural: **CSV sütunları yalnızca sona eklenir**, var olan sütun adı değiştirilmez veya kaldırılmaz. Görünüm değişiklikleri .xlsx tarafında yapılır; .xlsx her zaman CSV'den yeniden üretildiği için kayıtları etkilemez.
+- Biçim değiştirirken kural: **CSV sütunları yalnızca sona eklenir**, var olan sütun adı değiştirilmez veya kaldırılmaz. Görünüm değişiklikleri (sütun sırası dahil) .xlsx tarafında yapılır; .xlsx her zaman CSV'den yeniden üretildiği için kayıtları etkilemez. Bu yüzden `Palet Ölçüsü (mm)` CSV'de sonda, Excel'de Palet No'nun yanındadır.
 - Okutma Zamanı formatı: `dd.MM.yyyy HH:mm:ss` (cihaz saat dilimi).
 - **Atomik yazma:** her değişiklikte önce aynı klasörde geçici dosyaya yazılır (`flush: true`), sonra `rename` ile asıl dosyanın yerine taşınır. Uygulama yazma sırasında kapanırsa dosya yarım kalmamalı.
 - Tüm dosya işlemleri tek bir `ProjectRepository` üzerinden ve bir kilitle (Future zinciri) sıralı yapılır (aynı anda iki yazma olmasın).

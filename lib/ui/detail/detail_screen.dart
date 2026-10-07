@@ -141,20 +141,32 @@ class _DetailScreenState extends State<DetailScreen> {
     final entries = _entries ?? const <ScanEntry>[];
     final selected =
         entries.where((e) => _selected.contains(e.record.serialNo)).toList();
-    final pallet = await showPalletDialog(
+    // Palet no → ölçüsü; aynı palette ölçü girilmiş bir kayıt varsa o alınır.
+    final projectPallets = <String, String>{};
+    for (final e in entries) {
+      if (e.palletNo.isEmpty) continue;
+      projectPallets.update(
+        e.palletNo,
+        (size) => size.isEmpty ? e.palletSize : size,
+        ifAbsent: () => e.palletSize,
+      );
+    }
+    final assignment = await showPalletDialog(
       context,
       selected: selected,
-      projectPallets: {
-        for (final e in entries)
-          if (e.palletNo.isNotEmpty) e.palletNo,
-      },
+      projectPallets: projectPallets,
     );
-    if (pallet == null || !mounted) return;
+    if (assignment == null || !mounted) return;
+    final pallet = assignment.palletNo;
 
     await _run(() async {
       final serials = {..._selected};
-      final changed = await widget.repository
-          .assignPallet(widget.projectNo, serials, pallet);
+      final changed = await widget.repository.assignPallet(
+        widget.projectNo,
+        serials,
+        pallet,
+        palletSize: assignment.palletSize,
+      );
       if (!mounted) return;
       _clearSelection();
       _snack(switch ((changed, pallet.isEmpty)) {
@@ -434,7 +446,8 @@ class _EntryTile extends StatelessWidget {
               ),
             ),
           ),
-          if (entry.palletNo.isNotEmpty) _PalletBadge(entry.palletNo),
+          if (entry.palletNo.isNotEmpty)
+            _PalletBadge(entry.palletNo, entry.palletSize),
         ],
       ),
       subtitle: Text(
@@ -450,9 +463,12 @@ class _EntryTile extends StatelessWidget {
 }
 
 class _PalletBadge extends StatelessWidget {
-  const _PalletBadge(this.palletNo);
+  const _PalletBadge(this.palletNo, this.palletSize);
 
   final String palletNo;
+
+  /// `Genişlik x Uzunluk` (mm); girilmemişse boş.
+  final String palletSize;
 
   @override
   Widget build(BuildContext context) {
@@ -463,13 +479,23 @@ class _PalletBadge extends StatelessWidget {
         color: scheme.secondary,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(
-        'Palet $palletNo',
-        style: TextStyle(
-          color: scheme.onSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            'Palet $palletNo',
+            style: TextStyle(
+              color: scheme.onSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (palletSize.isNotEmpty)
+            Text(
+              '$palletSize mm',
+              style: TextStyle(color: scheme.onSecondary, fontSize: 11),
+            ),
+        ],
       ),
     );
   }

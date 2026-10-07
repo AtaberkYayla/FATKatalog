@@ -24,6 +24,16 @@ class ReleaseNote {
 /// kullanıcı da hangi sürümde ne değiştiğini görür.
 const releaseNotes = <ReleaseNote>[
   ReleaseNote(
+    version: '1.3.0',
+    date: '07.10.2026',
+    changes: [
+      'Palet ölçüsü: palet atarken Palet No\'nun altına palet genişliği ve '
+          'uzunluğu (mm) girilir. Excel çıktısında Palet No ile Okutma '
+          'Zamanı arasında "Palet Ölçüsü (mm)" sütununda Genişlik x Uzunluk '
+          'olarak görünür.',
+    ],
+  ),
+  ReleaseNote(
     version: '1.2.0',
     date: '23.09.2026',
     changes: [

@@ -68,7 +68,9 @@ class ProjectRepository {
   static const positionNoColumn = 'Poz No';
   static const palletNoColumn = 'Palet No';
   static const scannedAtColumn = 'Okutma Zamanı';
+  static const palletSizeColumn = 'Palet Ölçüsü (mm)';
 
+  /// CSV sütunları (kaynak veri). Yeni sütunlar yalnızca sona eklenir.
   static const header = [
     projectNoColumn,
     workOrderNoColumn,
@@ -78,11 +80,29 @@ class ProjectRepository {
     positionNoColumn,
     palletNoColumn,
     scannedAtColumn,
+    palletSizeColumn,
   ];
 
-  /// Palet No sütunundan önceki biçim (1.0.1 ve öncesi); başlık satırı
-  /// tanınmadığında sütun sırasına göre çözmek için.
-  static const _legacyColumnCount = 7;
+  /// Excel sütunları: CSV ile aynı sütunlar, görünüm gereği Palet Ölçüsü Palet
+  /// No'nun yanında. Excel her zaman CSV'den üretildiği için sıra serbest;
+  /// geri okurken sütunlar başlık adından bulunur.
+  static const xlsxHeader = [
+    projectNoColumn,
+    workOrderNoColumn,
+    erpProductNoColumn,
+    serialNoColumn,
+    productionDateColumn,
+    positionNoColumn,
+    palletNoColumn,
+    palletSizeColumn,
+    scannedAtColumn,
+  ];
+
+  /// Başlık satırı tanınmadığında sütun sırasına göre çözmek için eski
+  /// biçimlerin sütun sayıları: Palet No'suz (1.0.1 ve öncesi) ve Palet
+  /// Ölçüsü'süz (1.2.0 ve öncesi).
+  static const _noPalletColumnCount = 7;
+  static const _noPalletSizeColumnCount = 8;
 
   static final _projectFileName = RegExp(r'^(\d{4})\.csv$');
   static final _projectNo = RegExp(r'^\d{4}$');
@@ -150,22 +170,25 @@ class ProjectRepository {
         return removed;
       });
 
-  /// Seçilen kayıtlara palet no atar (boş metin paleti kaldırır); değişen
-  /// kayıt sayısını döndürür.
+  /// Seçilen kayıtlara palet no ve ölçüsünü atar (boş palet no paleti ve
+  /// ölçüsünü kaldırır); değişen kayıt sayısını döndürür.
   Future<int> assignPallet(
     String projectNo,
     Set<String> serialNos,
-    String palletNo,
-  ) =>
+    String palletNo, {
+    String palletSize = '',
+  }) =>
       _locked(() async {
         final entries = _projects[projectNo];
         if (entries == null) return 0;
         final pallet = palletNo.trim();
+        final size = pallet.isEmpty ? '' : palletSize.trim();
         var changed = 0;
         final updated = <ScanEntry>[];
         for (final e in entries) {
-          if (serialNos.contains(e.record.serialNo) && e.palletNo != pallet) {
-            updated.add(e.withPallet(pallet));
+          if (serialNos.contains(e.record.serialNo) &&
+              (e.palletNo != pallet || e.palletSize != size)) {
+            updated.add(e.withPallet(pallet, palletSize: size));
             changed++;
           } else {
             updated.add(e);
@@ -209,7 +232,8 @@ class ProjectRepository {
       });
 
   /// Tüm projelerin kayıtları, proje no ve okutma zamanına göre sıralı tek bir
-  /// tablo halinde ([header] hariç). Proje No zaten bir sütun olduğu için
+  /// tablo halinde ([xlsxHeader] sütun sırasıyla, başlık hariç). Proje No zaten
+  /// bir sütun olduğu için
   /// geri yüklerken projeler bu sütundan ayrıştırılır.
   Future<({List<List<String>> rows, int count})> exportAll() =>
       _locked(() async {
@@ -221,7 +245,10 @@ class ProjectRepository {
                 ? byProject
                 : a.scannedAt.compareTo(b.scannedAt);
           });
-        return (rows: all.map(_toRow).toList(), count: all.length);
+        return (
+          rows: all.map((e) => _toRow(e, xlsxHeader)).toList(),
+          count: all.length,
+        );
       });
 
   /// Bir dosyadan okunan satırları (ilk satır başlık) mevcut kayıtlarla
@@ -346,7 +373,7 @@ class ProjectRepository {
   }
 
   Future<void> _writeProject(String projectNo, List<ScanEntry> entries) async {
-    final rows = [header, ...entries.map(_toRow)];
+    final rows = [header, ...entries.map((e) => _toRow(e, header))];
     await _writeAtomic(_csvFile(projectNo), utf8.encode(CsvCodec.encode(rows)));
     await _writeAtomic(_xlsxFile(projectNo), _encodeXlsx(projectNo, entries));
   }
@@ -354,8 +381,8 @@ class ProjectRepository {
   List<int> _encodeXlsx(String projectNo, List<ScanEntry> entries) =>
       XlsxWriter.encode(
         sheetName: projectNo,
-        header: header,
-        rows: entries.map(_toRow).toList(),
+        header: xlsxHeader,
+        rows: entries.map((e) => _toRow(e, xlsxHeader)).toList(),
         headerStyle: headerStyle,
       );
 
@@ -429,13 +456,20 @@ class ProjectRepository {
       productionDate: value(productionDateColumn),
       positionNo: value(positionNoColumn),
       palletNo: value(palletNoColumn),
+      palletSize: value(palletSizeColumn),
       scannedAt: value(scannedAtColumn),
     );
   }
 
   static ScanEntry? _entryFromPositions(List<String> row) {
-    final legacy = row.length == _legacyColumnCount;
-    if (!legacy && row.length != header.length) return null;
+    // CSV sütun sırası; eski biçimlerde sondaki sütunlar yok.
+    if (row.length != _noPalletColumnCount &&
+        row.length != _noPalletSizeColumnCount &&
+        row.length != header.length) {
+      return null;
+    }
+    final hasPallet = row.length > _noPalletColumnCount;
+    final hasPalletSize = row.length > _noPalletSizeColumnCount;
     return _entry(
       projectNo: row[0],
       workOrderNo: row[1],
@@ -443,8 +477,9 @@ class ProjectRepository {
       serialNo: row[3],
       productionDate: row[4],
       positionNo: row[5],
-      palletNo: legacy ? '' : row[6],
-      scannedAt: row.last,
+      palletNo: hasPallet ? row[6] : '',
+      palletSize: hasPalletSize ? row[8] : '',
+      scannedAt: hasPallet ? row[7] : row[6],
     );
   }
 
@@ -456,6 +491,7 @@ class ProjectRepository {
     required String productionDate,
     required String positionNo,
     required String palletNo,
+    required String palletSize,
     required String scannedAt,
   }) {
     // Seri no kaydın kimliği; onsuz satır işe yaramaz.
@@ -470,20 +506,28 @@ class ProjectRepository {
         positionNo: positionNo,
       ),
       palletNo: palletNo,
+      palletSize: palletSize,
       // Bozuk zaman damgası kaydı kaybettirmesin; en eskiye yerleşir.
       scannedAt: parseTimestamp(scannedAt) ?? DateTime(1970),
     );
   }
 
-  static List<String> _toRow(ScanEntry e) => [
-        e.record.projectNo,
-        e.record.workOrderNo,
-        e.record.erpProductNo,
-        e.record.serialNo,
-        e.record.productionDate,
-        e.record.positionNo,
-        e.palletNo,
-        formatTimestamp(e.scannedAt),
+  /// Kaydın [columns] sırasındaki satırı (CSV için [header], Excel için
+  /// [xlsxHeader]).
+  static List<String> _toRow(ScanEntry e, List<String> columns) => [
+        for (final column in columns)
+          switch (column) {
+            projectNoColumn => e.record.projectNo,
+            workOrderNoColumn => e.record.workOrderNo,
+            erpProductNoColumn => e.record.erpProductNo,
+            serialNoColumn => e.record.serialNo,
+            productionDateColumn => e.record.productionDate,
+            positionNoColumn => e.record.positionNo,
+            palletNoColumn => e.palletNo,
+            palletSizeColumn => e.palletSize,
+            scannedAtColumn => formatTimestamp(e.scannedAt),
+            _ => '',
+          },
       ];
 
   /// CSV saniye hassasiyetinde; bellekteki değer diskteki ile aynı kalsın.

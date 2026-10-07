@@ -35,7 +35,7 @@ void main() {
 
   /// Dışa aktarılan tablo, başlık satırıyla birlikte (dosyaya yazılacak hali).
   Future<List<List<String>>> exportRows(ProjectRepository repo) async =>
-      [ProjectRepository.header, ...(await repo.exportAll()).rows];
+      [ProjectRepository.xlsxHeader, ...(await repo.exportAll()).rows];
 
   setUp(() async {
     dir = await newTempDir();
@@ -60,7 +60,7 @@ void main() {
     final rows = CsvCodec.decode(await file('8835.csv').readAsString());
     expect(rows, [
       ProjectRepository.header,
-      ['8835', 'P2-00180700', '601107999', 'DDM261062', '06/2026', '', '', '22.09.2026 10:50:00'],
+      ['8835', 'P2-00180700', '601107999', 'DDM261062', '06/2026', '', '', '22.09.2026 10:50:00', ''],
     ]);
     expect(await file('8835.xlsx').exists(), isTrue);
     expect(dir.listSync().where((f) => f.path.endsWith('.tmp')), isEmpty);
@@ -235,7 +235,7 @@ void main() {
     expect(rows[0], ProjectRepository.header);
     expect(rows[1], [
       '8835', 'P2-00180700', '601107999', 'DDM261062', '06/2026', 'P-1',
-      'PLT-09', '22.09.2026 09:00:00',
+      'PLT-09', '22.09.2026 09:00:00', '',
     ]);
   });
 
@@ -247,13 +247,14 @@ void main() {
       [...ProjectRepository.header, 'FAT Sonucu'],
       [
         '8835', 'P2-00180700', '601107999', 'DDM261062', '06/2026', 'P-1',
-        'PLT-09', '22.09.2026 09:00:00', 'Geçti',
+        'PLT-09', '22.09.2026 09:00:00', '800 x 1200', 'Geçti',
       ],
     ]));
 
     final entry = (await newRepo().entries('8835')).single;
     expect(entry.record.serialNo, 'DDM261062');
     expect(entry.palletNo, 'PLT-09');
+    expect(entry.palletSize, '800 x 1200');
     expect(entry.scannedAt, DateTime(2026, 9, 22, 9));
   });
 
@@ -376,7 +377,7 @@ void main() {
 
     final edited = await exportRows(repo);
     edited[1][6] = 'PLT-01';
-    edited[1][7] = '01.01.2020 00:00:00'; // dosyadaki zaman farklı
+    edited[1][8] = '01.01.2020 00:00:00'; // dosyadaki zaman farklı
 
     expect((await repo.importRows(edited)).updated, 1);
     final entry = (await repo.entries('8835')).single;
@@ -482,7 +483,7 @@ void main() {
       [...ProjectRepository.header, 'FAT Sonucu'],
       [
         '8835', 'P2-00180700', '601107999', 'DDM261062', '06/2026', 'P-1',
-        'PLT-09', '22.09.2026 09:00:00', 'Geçti',
+        'PLT-09', '22.09.2026 09:00:00', '', 'Geçti',
       ],
     ];
 
@@ -532,5 +533,174 @@ void main() {
     final xlsx = await repo.xlsxFile('8835');
     expect(await xlsx!.exists(), isTrue);
     expect(await repo.xlsxFile('9999'), isNull);
+  });
+
+  group('palet ölçüsü', () {
+    test('palet no ile birlikte atanır; CSV de sona, Excel de araya yazılır',
+        () async {
+      final repo = newRepo();
+      await repo.add(_a);
+      expect(
+        await repo.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+            palletSize: ' 800 x 1200 '),
+        1,
+      );
+
+      // CSV: yeni sütun sona eklenir (eski sütunların sırası değişmez).
+      final csv = CsvCodec.decode(await file('8835.csv').readAsString());
+      expect(csv[0].last, 'Palet Ölçüsü (mm)');
+      expect(csv[0][7], 'Okutma Zamanı');
+      expect(csv[1].last, '800 x 1200');
+
+      // Excel: Palet No ile Okutma Zamanı arasında.
+      final xlsx = XlsxReader.decode(
+          await (await repo.xlsxFile('8835'))!.readAsBytes());
+      expect(xlsx[0].sublist(6), ['Palet No', 'Palet Ölçüsü (mm)', 'Okutma Zamanı']);
+      expect(xlsx[1].sublist(6),
+          ['PLT-01', '800 x 1200', '22.09.2026 10:50:00']);
+
+      final reopened = newRepo();
+      expect((await reopened.entries('8835')).single.palletSize, '800 x 1200');
+    });
+
+    test('yalnızca ölçü değişirse de kayıt değişmiş sayılır', () async {
+      final repo = newRepo();
+      await repo.add(_a);
+      await repo.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+          palletSize: '800 x 1200');
+      expect(
+          await repo.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+              palletSize: '800 x 1200'),
+          0);
+      expect(
+          await repo.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+              palletSize: '1000 x 1200'),
+          1);
+      expect((await repo.entries('8835')).single.palletSize, '1000 x 1200');
+    });
+
+    test('paleti kaldırmak ölçüyü de kaldırır', () async {
+      final repo = newRepo();
+      await repo.add(_a);
+      await repo.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+          palletSize: '800 x 1200');
+      expect(
+          await repo.assignPallet('8835', {'DDM261062'}, '',
+              palletSize: '800 x 1200'),
+          1);
+      final entry = (await repo.entries('8835')).single;
+      expect(entry.palletNo, '');
+      expect(entry.palletSize, '');
+    });
+
+    test('Excel dosyasından ölçü geri yüklenir', () async {
+      final source = newRepo();
+      await source.add(_a);
+      await source.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+          palletSize: '800 x 1200');
+      final xlsx = await (await source.xlsxFile('8835'))!.readAsBytes();
+
+      final target = repoIn(await newTempDir());
+      expect((await target.importRows(XlsxReader.decode(xlsx))).added, 1);
+      final entry = (await target.entries('8835')).single;
+      expect(entry.palletNo, 'PLT-01');
+      expect(entry.palletSize, '800 x 1200');
+    });
+
+    test('tüm projeler dosyasındaki ölçü de geri yüklenir', () async {
+      final source = newRepo();
+      await source.add(_a);
+      await source.assignPallet('8835', {'DDM261062'}, 'PLT-01',
+          palletSize: '800 x 1200');
+
+      final target = repoIn(await newTempDir());
+      expect((await target.importRows(await exportRows(source))).added, 1);
+      expect((await target.entries('8835')).single.palletSize, '800 x 1200');
+    });
+
+    test('1.2.0 CSV si (ölçü sütunu yok) okunur, ilk yazmada yeni biçime geçer',
+        () async {
+      await dir.create(recursive: true);
+      await file('8835.csv').writeAsString(CsvCodec.encode([
+        [
+          'Proje No', 'İş Emri No', 'Erp Ürün No', 'Seri No', 'Üretim Yılı',
+          'Poz No', 'Palet No', 'Okutma Zamanı',
+        ],
+        ['8835', 'P2-00180700', '601107999', 'DDM261062', '06/2026', '',
+            'PLT-09', '22.09.2026 09:00:00'],
+      ]));
+
+      final repo = newRepo();
+      final old = (await repo.entries('8835')).single;
+      expect(old.palletNo, 'PLT-09');
+      expect(old.palletSize, '');
+
+      await repo.assignPallet('8835', {'DDM261062'}, 'PLT-09',
+          palletSize: '1000 x 1200');
+      final rows = CsvCodec.decode(await file('8835.csv').readAsString());
+      expect(rows[0], ProjectRepository.header);
+      expect(rows[1].last, '1000 x 1200');
+    });
+
+    test('başlığı tanınmayan 8 sütunlu eski CSV sütun sırasına göre okunur',
+        () async {
+      // Başlık satırı bozulmuş (Seri No yok); eski 8 sütunlu biçimde zaman
+      // 8. sütundadır, ölçü sütunu yoktur.
+      final decoded = [
+        ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+        ['8835', 'P2-1', '601', 'DDM1', '06/2026', '', 'PLT-09',
+            '22.09.2026 09:00:00'],
+      ];
+      // Tanınmayan başlıkta içe aktarma reddedilir; CSV yüklemesi ise sütun
+      // sırasına düşer.
+      await dir.create(recursive: true);
+      await file('8835.csv').writeAsString(CsvCodec.encode(decoded));
+      final entry = (await newRepo().entries('8835')).single;
+      expect(entry.palletNo, 'PLT-09');
+      expect(entry.palletSize, '');
+      expect(entry.scannedAt, DateTime(2026, 9, 22, 9));
+    });
+
+    test('içe aktarma boş ölçüyü tamamlar, dolu ölçünün üstüne yazmaz',
+        () async {
+      final repo = newRepo();
+      await repo.add(_a);
+      await repo.add(_b);
+      await repo.assignPallet('8835', {'DDM261062', 'DDM261063'}, 'PLT-01');
+      await repo.assignPallet('8835', {'DDM261063'}, 'PLT-01',
+          palletSize: '800 x 1200');
+
+      final file = await exportRows(repo);
+      final sizeCol = ProjectRepository.xlsxHeader
+          .indexOf(ProjectRepository.palletSizeColumn);
+      file[1][sizeCol] = '1000 x 1200'; // telefonda boş → tamamlanır
+      file[2][sizeCol] = '600 x 800'; // telefonda dolu → dokunulmaz
+
+      final result = await repo.importRows(file);
+      expect(result.updated, 1);
+      expect(result.unchanged, 1);
+      expect((await repo.entries('8835')).map((e) => e.palletSize),
+          ['1000 x 1200', '800 x 1200']);
+    });
+
+    test('ölçü başka paletin olduğu için telefondaki palete yazılmaz',
+        () async {
+      final repo = newRepo();
+      await repo.add(_a);
+      await repo.assignPallet('8835', {'DDM261062'}, 'PLT-01'); // ölçüsüz
+
+      final file = await exportRows(repo);
+      final palletCol = ProjectRepository.xlsxHeader
+          .indexOf(ProjectRepository.palletNoColumn);
+      final sizeCol = ProjectRepository.xlsxHeader
+          .indexOf(ProjectRepository.palletSizeColumn);
+      file[1][palletCol] = 'PLT-02';
+      file[1][sizeCol] = '1000 x 1200';
+
+      expect((await repo.importRows(file)).updated, 0);
+      final entry = (await repo.entries('8835')).single;
+      expect(entry.palletNo, 'PLT-01');
+      expect(entry.palletSize, '');
+    });
   });
 }
