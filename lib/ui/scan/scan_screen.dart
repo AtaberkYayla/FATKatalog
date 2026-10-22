@@ -13,9 +13,16 @@ import 'scan_controller.dart';
 /// Kamera iznini `mobile_scanner` ilk başlatmada ister; reddedilirse açıklama,
 /// tekrar deneme ve ayarlara gitme seçenekleri gösterilir.
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key, required this.controller});
+  const ScanScreen({
+    super.key,
+    required this.controller,
+    required this.onManualEntry,
+  });
 
   final ScanController controller;
+
+  /// Etiketsiz malzeme için manuel ekleme ekranını açar.
+  final VoidCallback onManualEntry;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -133,6 +140,20 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
           top: 16,
           right: 16,
           child: _TorchButton(camera: _camera),
+        ),
+        Positioned(
+          top: 16,
+          left: 16,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: scrimDark,
+              foregroundColor: viewfinderFrame,
+              minimumSize: const Size(0, 56),
+            ),
+            icon: const Icon(Icons.edit_note),
+            label: const Text('Manuel ekle'),
+            onPressed: widget.onManualEntry,
+          ),
         ),
         Positioned(
           left: 12,

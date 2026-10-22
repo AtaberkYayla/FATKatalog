@@ -7,6 +7,8 @@ import '../../export/export_manager.dart';
 import '../../model/label_record.dart';
 import '../../storage/project_repository.dart';
 import '../../storage/timestamp.dart';
+import '../manual/manual_entry_screen.dart';
+import '../widgets/archive_dialog.dart';
 import 'pallet_dialog.dart';
 
 enum _SortOrder { scannedAt, serialNo, palletNo }
@@ -21,10 +23,15 @@ class DetailScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.projectNo,
+    this.archive,
   });
 
   final ProjectRepository repository;
   final String projectNo;
+
+  /// Verilirse arşivdeki bir liste salt okunur gösterilir: seçim, palet atama,
+  /// silme ve manuel ekleme yoktur; Excel indirme ve paylaşma çalışır.
+  final ArchiveSummary? archive;
 
   @override
   State<DetailScreen> createState() => _DetailScreenState();
@@ -42,6 +49,8 @@ class _DetailScreenState extends State<DetailScreen> {
 
   bool get _selecting => _selected.isNotEmpty;
 
+  bool get _readOnly => widget.archive != null;
+
   @override
   void initState() {
     super.initState();
@@ -56,7 +65,10 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _load() async {
-    final entries = await widget.repository.entries(widget.projectNo);
+    final archive = widget.archive;
+    final entries = archive == null
+        ? await widget.repository.entries(widget.projectNo)
+        : await widget.repository.archivedEntries(archive.id);
     if (!mounted) return;
     setState(() {
       _entries = entries;
@@ -130,12 +142,25 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _download() => _run(() async {
-        final location = await _export.download(widget.projectNo);
+        final archive = widget.archive;
+        final location = archive == null
+            ? await _export.download(widget.projectNo)
+            : await _export.downloadArchive(archive);
         if (location != null && mounted) _snack('Kaydedildi: $location');
       }, 'İndirilemedi');
 
-  Future<void> _share() =>
-      _run(() => _export.share(widget.projectNo), 'Paylaşılamadı');
+  Future<void> _share() => _run(() {
+        final archive = widget.archive;
+        return archive == null
+            ? _export.share(widget.projectNo)
+            : _export.shareArchive(archive);
+      }, 'Paylaşılamadı');
+
+  Future<void> _archive() async {
+    final archived = await confirmAndArchive(
+        context, widget.repository, widget.projectNo);
+    if (archived != null && mounted) Navigator.of(context).pop();
+  }
 
   Future<void> _assignPallet() async {
     final entries = _entries ?? const <ScanEntry>[];
@@ -262,7 +287,8 @@ class _DetailScreenState extends State<DetailScreen> {
                   ],
                 ),
               ),
-            if (entries != null) _SummaryRow(entries: entries),
+            if (entries != null)
+              _SummaryRow(entries: entries, readOnly: _readOnly),
             const Divider(height: 1),
             Expanded(
               child: entries == null
@@ -273,6 +299,7 @@ class _DetailScreenState extends State<DetailScreen> {
                           entries: _sorted(entries),
                           selected: _selected,
                           selecting: _selecting,
+                          readOnly: _readOnly,
                           onToggle: _toggle,
                         ),
             ),
@@ -284,8 +311,31 @@ class _DetailScreenState extends State<DetailScreen> {
 
   PreferredSizeWidget _normalAppBar() {
     return AppBar(
-      title: Text('Proje ${widget.projectNo}'),
+      title: Text(
+        _readOnly
+            ? '${widget.projectNo} (${formatArchiveLabel(widget.archive!.archivedAt)})'
+            : 'Proje ${widget.projectNo}',
+      ),
       actions: [
+        if (!_readOnly) ...[
+          IconButton(
+            tooltip: 'Manuel ekle',
+            icon: const Icon(Icons.edit_note),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ManualEntryScreen(
+                  repository: widget.repository,
+                  initialProjectNo: widget.projectNo,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Arşive al',
+            icon: const Icon(Icons.archive_outlined),
+            onPressed: _busy ? null : _archive,
+          ),
+        ],
         PopupMenuButton<_SortOrder>(
           tooltip: 'Sırala',
           icon: const Icon(Icons.sort),
@@ -351,9 +401,10 @@ class _DetailScreenState extends State<DetailScreen> {
 }
 
 class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({required this.entries});
+  const _SummaryRow({required this.entries, required this.readOnly});
 
   final List<ScanEntry> entries;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -368,7 +419,8 @@ class _SummaryRow extends StatelessWidget {
             style: text.titleMedium,
           ),
           const Spacer(),
-          Text('Seçmek için uzun basın', style: text.bodySmall),
+          Text(readOnly ? 'Arşiv · salt okunur' : 'Seçmek için uzun basın',
+              style: text.bodySmall),
         ],
       ),
     );
@@ -380,12 +432,14 @@ class _EntryList extends StatelessWidget {
     required this.entries,
     required this.selected,
     required this.selecting,
+    required this.readOnly,
     required this.onToggle,
   });
 
   final List<ScanEntry> entries;
   final Set<String> selected;
   final bool selecting;
+  final bool readOnly;
   final void Function(ScanEntry) onToggle;
 
   @override
@@ -401,7 +455,8 @@ class _EntryList extends StatelessWidget {
           selecting: selecting,
           selected: selected.contains(entry.record.serialNo),
           onTap: selecting ? () => onToggle(entry) : null,
-          onLongPress: () => onToggle(entry),
+          // Arşivde seçim modu yok.
+          onLongPress: readOnly ? null : () => onToggle(entry),
         );
       },
     );
@@ -421,7 +476,7 @@ class _EntryTile extends StatelessWidget {
   final bool selecting;
   final bool selected;
   final VoidCallback? onTap;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -433,7 +488,7 @@ class _EntryTile extends StatelessWidget {
       selected: selected,
       selectedTileColor: theme.colorScheme.primary.withValues(alpha: 0.08),
       leading: selecting
-          ? Checkbox(value: selected, onChanged: (_) => onLongPress())
+          ? Checkbox(value: selected, onChanged: (_) => onLongPress?.call())
           : null,
       title: Row(
         children: [
@@ -450,10 +505,17 @@ class _EntryTile extends StatelessWidget {
             _PalletBadge(entry.palletNo, entry.palletSize),
         ],
       ),
+      // Etiketsiz (elle eklenen) kayıtlarda boş alanlar gösterilmez.
       subtitle: Text(
-        'İş Emri: ${r.workOrderNo} · Erp Ürün: ${r.erpProductNo}'
-        '${r.positionNo.isEmpty ? '' : ' · Poz: ${r.positionNo}'}\n'
-        'Üretim: ${r.productionDate} · Okutma: ${formatTimestamp(entry.scannedAt)}',
+        '${[
+          if (r.workOrderNo.isNotEmpty) 'İş Emri: ${r.workOrderNo}',
+          if (r.erpProductNo.isNotEmpty) 'Erp Ürün: ${r.erpProductNo}',
+          if (r.positionNo.isNotEmpty) 'Poz: ${r.positionNo}',
+        ].join(' · ')}\n'
+        '${[
+          if (r.productionDate.isNotEmpty) 'Üretim: ${r.productionDate}',
+          'Okutma: ${formatTimestamp(entry.scannedAt)}',
+        ].join(' · ')}',
       ),
       isThreeLine: true,
       onTap: onTap,

@@ -6,6 +6,7 @@ import '../../model/label_record.dart';
 import '../../storage/project_repository.dart';
 import '../../storage/timestamp.dart';
 import '../detail/detail_screen.dart';
+import '../widgets/archive_dialog.dart';
 
 /// Proje listesi: son okutmaya göre sıralı, proje no ile aranabilir.
 class ProjectsScreen extends StatefulWidget {
@@ -105,6 +106,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, i) => _ProjectTile(
                   project: list[i],
+                  onLongPress: () => unawaited(confirmAndArchive(
+                      context, widget.repository, list[i].projectNo)),
                   onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) => DetailScreen(
                       repository: widget.repository,
@@ -121,10 +124,15 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 }
 
 class _ProjectTile extends StatelessWidget {
-  const _ProjectTile({required this.project, required this.onTap});
+  const _ProjectTile({
+    required this.project,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final ProjectSummary project;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -143,6 +151,7 @@ class _ProjectTile extends StatelessWidget {
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
+      onLongPress: onLongPress,
     );
   }
 }

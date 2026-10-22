@@ -24,6 +24,29 @@ class ReleaseNote {
 /// kullanıcı da hangi sürümde ne değiştiğini görür.
 const releaseNotes = <ReleaseNote>[
   ReleaseNote(
+    version: '1.5.0',
+    date: '22.10.2026',
+    changes: [
+      'Arşiv: sevkiyatı biten projenin listesi, Proje Detayı\'ndaki arşiv '
+          'simgesinden ya da Projeler listesinde projeye uzun basarak arşive '
+          'alınır. Ana listeden kalkar, aynı proje no için yeni liste boş '
+          'başlar. Arşiv sekmesinde "8900 (13.10.2026-15:41)" olarak saklanır; '
+          'açıp bakabilir, Excel olarak indirip paylaşabilir ya da silebilirsiniz.',
+      'Arşive alınan ürünlerin seri numaraları serbest kalır, yeni listede '
+          'tekrar okutulabilir.',
+    ],
+  ),
+  ReleaseNote(
+    version: '1.4.0',
+    date: '13.10.2026',
+    changes: [
+      'Manuel ekle: etiketi olmayan malzemeler elle eklenebilir. Okut '
+          'ekranındaki "Manuel ekle" düğmesinden ya da Proje Detayı\'ndaki '
+          'üst çubuk simgesinden açılır. Proje No ve Seri No zorunludur; '
+          'diğer alanlar boş bırakılabilir.',
+    ],
+  ),
+  ReleaseNote(
     version: '1.3.0',
     date: '07.10.2026',
     changes: [

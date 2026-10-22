@@ -72,6 +72,22 @@ Uygulamanın iç depolaması altında:
 - **Atomik yazma:** her değişiklikte önce aynı klasörde geçici dosyaya yazılır (`flush: true`), sonra `rename` ile asıl dosyanın yerine taşınır. Uygulama yazma sırasında kapanırsa dosya yarım kalmamalı.
 - Tüm dosya işlemleri tek bir `ProjectRepository` üzerinden ve bir kilitle (Future zinciri) sıralı yapılır (aynı anda iki yazma olmasın).
 
+### Arşiv
+
+Sevkiyatı biten projenin listesi arşive alınır; ana listeden kalkar, aynı proje no için yeni liste boş başlar.
+
+```
+<applicationSupportDirectory>/projects/archive/
+  8900_13-10-2026_15-41-07.csv   ← <projeNo>_<gg-aa-yyyy>_<ss-dd-sn> (arşivleme zamanı)
+  8900_13-10-2026_15-41-07.xlsx
+```
+
+- Arşivleme `projects/<no>.csv` ve `.xlsx` dosyalarının `archive/` altına yeni adla **rename** ile taşınmasıdır (`ProjectRepository.archiveProject`). Arşivleme zamanı dosya adından okunur, ayrı meta dosyası yoktur. Arşiv CSV'si normal proje CSV'siyle aynı biçimdedir.
+- Arşivlenen seri no'lar `_serialIndex`'ten çıkar; tekrar kontrolü yalnızca aktif projeler arasındadır, yani eski sevkiyatın seri no'su yeni listede tekrar okutulabilir.
+- Arşiv **salt okunur**: palet atama, silme, manuel ekleme yok; Excel indirme/paylaşma var (`8900_arsiv_13-10-2026_15-41.xlsx`). **Geri alma yok**; arşivden silme var (onaylı, kalıcı).
+- "Tümünü Excel olarak indir / Excel dosyasından yükle" arşivi **kapsamaz**.
+- Arayüz: alt navigasyonda Arşiv sekmesi, satır başlığı `8900 (13.10.2026-15:41)`. Arşive alma: Proje Detayı üst çubuğundaki simge ya da Projeler listesinde uzun basma (onay diyaloğu).
+
 ### Tekrar kontrolü
 
 - Seri No **tüm projeler genelinde** benzersizdir. Aynı seri no tekrar okutulursa kayıt yapılmaz, "DDM261062 zaten 8835 projesinde kayıtlı" gibi uyarı verilir.
@@ -131,7 +147,11 @@ xl/worksheets/sheet1.xml
   - Dosya adı: `8835_22-09-2026.xlsx` (proje no + indirme tarihi, gün-ay-yıl).
 - **"Paylaş"** butonu: `share_plus` (WhatsApp, e-posta vb.). MIME: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
-Alt navigasyon: Okut · Projeler.
+### 4. Arşiv
+- Arşive alınmış listeler ("8900 (13.10.2026-15:41)"), arşivleme zamanına göre yeniden eskiye; proje no ile arama.
+- Dokununca salt okunur detay (Excel indir / Paylaş var); satırdaki simgeyle arşivden silinir. Ayrıntı: "Veri saklama → Arşiv".
+
+Alt navigasyon: Okut · Projeler · Arşiv.
 
 ## İçe / dışa aktarma
 
@@ -222,6 +242,7 @@ lib/
 └── ui/
     ├── scan/
     ├── projects/
+    ├── archive/
     ├── detail/
     ├── widgets/
     └── theme/

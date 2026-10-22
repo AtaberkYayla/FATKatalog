@@ -70,6 +70,9 @@ class ProjectRepository {
   static const scannedAtColumn = 'Okutma Zamanı';
   static const palletSizeColumn = 'Palet Ölçüsü (mm)';
 
+  /// Arşive alınan listelerin klasörü (`projects/` içinde).
+  static const archiveDirName = 'archive';
+
   /// CSV sütunları (kaynak veri). Yeni sütunlar yalnızca sona eklenir.
   static const header = [
     projectNoColumn,
@@ -229,6 +232,94 @@ class ProjectRepository {
         final file = _xlsxFile(projectNo);
         await _writeAtomic(file, _encodeXlsx(projectNo, entries));
         return file;
+      });
+
+  /// Projeyi arşive alır: dosyaları `archive/` altına
+  /// `<projeNo>_<gg-aa-yyyy>_<ss-dd-sn>` adıyla taşır ve projeyi ana listeden
+  /// kaldırır. Seri numaraları serbest kalır; tekrar kontrolü yalnızca aktif
+  /// projeler arasındadır. Proje yoksa `null`.
+  Future<ArchiveSummary?> archiveProject(String projectNo) => _locked(() async {
+        final entries = _projects[projectNo];
+        if (entries == null) return null;
+
+        await _archiveDir.create(recursive: true);
+        var archivedAt = _now();
+        // Aynı saniyede aynı ada denk gelinirse bir sonraki saniyeye kay.
+        String idAt(DateTime t) =>
+            '${projectNo}_${formatFileDate(t)}_${formatFileTime(t)}';
+        while (await _archiveFile(idAt(archivedAt), 'csv').exists()) {
+          archivedAt = archivedAt.add(const Duration(seconds: 1));
+        }
+        final id = idAt(archivedAt);
+
+        // Önce CSV (kaynak veri), sonra xlsx; ikisi de rename ile atomik.
+        await _csvFile(projectNo).rename(_archiveFile(id, 'csv').path);
+        final xlsx = _xlsxFile(projectNo);
+        if (await xlsx.exists()) await xlsx.rename(_archiveFile(id, 'xlsx').path);
+
+        _projects.remove(projectNo);
+        for (final e in entries) {
+          _serialIndex.remove(e.record.serialNo);
+        }
+        _changes.add(null);
+        return ArchiveSummary(
+          id: id,
+          projectNo: projectNo,
+          archivedAt: archivedAt,
+          itemCount: entries.length,
+        );
+      });
+
+  /// Arşive alınmış listeler, arşivleme zamanına göre yeniden eskiye.
+  Future<List<ArchiveSummary>> listArchives() => _locked(() async {
+        if (!await _archiveDir.exists()) return const [];
+        final summaries = <ArchiveSummary>[];
+        await for (final entity in _archiveDir.list()) {
+          if (entity is! File) continue;
+          final id = _archiveIdOf(entity.uri.pathSegments.last);
+          final parsed = id == null ? null : _parseArchiveId(id);
+          if (id == null || parsed == null) continue;
+          final entries = _decodeCsv(await entity.readAsString()).entries;
+          summaries.add(ArchiveSummary(
+            id: id,
+            projectNo: parsed.projectNo,
+            archivedAt: parsed.archivedAt,
+            itemCount: entries.length,
+          ));
+        }
+        summaries.sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
+        return summaries;
+      });
+
+  /// Arşivdeki listenin kayıtları (okutma sırasına göre). Arşiv yoksa boş.
+  Future<List<ScanEntry>> archivedEntries(String id) => _locked(() async {
+        final file = _archiveFileOrNull(id, 'csv');
+        if (file == null || !await file.exists()) return const [];
+        return List.unmodifiable(_decodeCsv(await file.readAsString()).entries);
+      });
+
+  /// Arşivdeki listenin .xlsx dosyası (CSV'den yeniden üretilir); arşiv yoksa
+  /// `null`.
+  Future<File?> archivedXlsxFile(String id) => _locked(() async {
+        final csv = _archiveFileOrNull(id, 'csv');
+        final xlsx = _archiveFileOrNull(id, 'xlsx');
+        final parsed = _parseArchiveId(id);
+        if (csv == null || xlsx == null || parsed == null) return null;
+        if (!await csv.exists()) return null;
+        final entries = _decodeCsv(await csv.readAsString()).entries;
+        await _writeAtomic(xlsx, _encodeXlsx(parsed.projectNo, entries));
+        return xlsx;
+      });
+
+  /// Arşivdeki listeyi kalıcı olarak siler; silindiyse `true`.
+  Future<bool> deleteArchive(String id) => _locked(() async {
+        final csv = _archiveFileOrNull(id, 'csv');
+        final xlsx = _archiveFileOrNull(id, 'xlsx');
+        if (csv == null || xlsx == null || !await csv.exists()) return false;
+        await csv.delete();
+        if (await xlsx.exists()) await xlsx.delete();
+        _changes.add(null);
+        return true;
       });
 
   /// Tüm projelerin kayıtları, proje no ve okutma zamanına göre sıralı tek bir
@@ -535,6 +626,39 @@ class ProjectRepository {
     final t = _clock();
     return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
   }
+
+  /// Arşivler `projects/archive/` altında durur; ana yükleme yalnızca `projects/`
+  /// içindeki dosyalara baktığı için karışmazlar.
+  Directory get _archiveDir =>
+      Directory('${projectsDir.path}${Platform.pathSeparator}$archiveDirName');
+
+  static final _archiveFileName = RegExp(r'^(.+)\.csv$');
+  static final _archiveId =
+      RegExp(r'^(\d{4})_(\d{2})-(\d{2})-(\d{4})_(\d{2})-(\d{2})-(\d{2})$');
+
+  /// `8900_13-10-2026_15-41-07.csv` → `8900_13-10-2026_15-41-07`; CSV değilse
+  /// `null`.
+  static String? _archiveIdOf(String fileName) =>
+      _archiveFileName.firstMatch(fileName)?.group(1);
+
+  /// Arşiv adından proje no ve arşivleme zamanı; ad biçimine uymuyorsa `null`.
+  static ({String projectNo, DateTime archivedAt})? _parseArchiveId(String id) {
+    final m = _archiveId.firstMatch(id);
+    if (m == null) return null;
+    final v = [for (var i = 2; i <= 7; i++) int.parse(m.group(i)!)];
+    return (
+      projectNo: m.group(1)!,
+      archivedAt: DateTime(v[2], v[1], v[0], v[3], v[4], v[5]),
+    );
+  }
+
+  File _archiveFile(String id, String extension) => File(
+      '${_archiveDir.path}${Platform.pathSeparator}$id.$extension');
+
+  /// Dışarıdan gelen [id] geçerli bir arşiv adı değilse `null` (yol
+  /// değiştirme girişimlerine karşı).
+  File? _archiveFileOrNull(String id, String extension) =>
+      _archiveId.hasMatch(id) ? _archiveFile(id, extension) : null;
 
   File _csvFile(String projectNo) =>
       File('${projectsDir.path}${Platform.pathSeparator}$projectNo.csv');

@@ -11,6 +11,14 @@ String formatTimestampShort(DateTime t) =>
 String formatFileDate(DateTime t) =>
     '${_pad2(t.day)}-${_pad2(t.month)}-${t.year}';
 
+/// `HH-mm-ss` — arşiv dosya adlarında.
+String formatFileTime(DateTime t) =>
+    '${_pad2(t.hour)}-${_pad2(t.minute)}-${_pad2(t.second)}';
+
+/// `dd.MM.yyyy-HH:mm` — arşiv listesinde, ör. `13.10.2026-15:41`.
+String formatArchiveLabel(DateTime t) =>
+    '${_pad2(t.day)}.${_pad2(t.month)}.${t.year}-${_pad2(t.hour)}:${_pad2(t.minute)}';
+
 final _pattern = RegExp(r'^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})$');
 
 /// [formatTimestamp] çıktısını geri çözer; biçim uymazsa `null`.

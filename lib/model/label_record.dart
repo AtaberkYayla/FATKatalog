@@ -119,6 +119,22 @@ class ScanEntry {
   int get hashCode => Object.hash(record, scannedAt, palletNo, palletSize);
 }
 
+/// Arşive alınmış bir proje listesi (bir sevkiyatın kaydı).
+class ArchiveSummary {
+  const ArchiveSummary({
+    required this.id,
+    required this.projectNo,
+    required this.archivedAt,
+    required this.itemCount,
+  });
+
+  /// Arşiv dosyasının adı (uzantısız), ör. `8900_13-10-2026_15-41-07`.
+  final String id;
+  final String projectNo;
+  final DateTime archivedAt;
+  final int itemCount;
+}
+
 class ProjectSummary {
   const ProjectSummary({
     required this.projectNo,

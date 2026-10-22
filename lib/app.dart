@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'storage/project_repository.dart';
+import 'ui/archive/archive_screen.dart';
+import 'ui/manual/manual_entry_screen.dart';
 import 'ui/projects/backup_menu.dart';
 import 'ui/projects/projects_screen.dart';
 import 'ui/scan/scan_controller.dart';
@@ -25,7 +27,7 @@ class FatKatalogApp extends StatelessWidget {
   }
 }
 
-/// Alt navigasyon: Okut · Projeler.
+/// Alt navigasyon: Okut · Projeler · Arşiv.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.repository});
 
@@ -58,8 +60,21 @@ class _HomeShellState extends State<HomeShell> {
       ),
       // Kamera yalnızca Okut sekmesindeyken açık; son sonuç ScanController'da kalır.
       body: switch (_tab) {
-        0 => ScanScreen(controller: _scan),
-        _ => ProjectsScreen(repository: widget.repository),
+        0 => ScanScreen(
+            controller: _scan,
+            onManualEntry: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ManualEntryScreen(
+                  repository: widget.repository,
+                  // En son çalışılan proje hazır gelir.
+                  initialProjectNo: _scan.lastProjectNo,
+                  onAdded: _scan.rememberManualProject,
+                ),
+              ),
+            ),
+          ),
+        1 => ProjectsScreen(repository: widget.repository),
+        _ => ArchiveScreen(repository: widget.repository),
       },
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -73,6 +88,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.folder_outlined),
             selectedIcon: Icon(Icons.folder),
             label: 'Projeler',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.archive_outlined),
+            selectedIcon: Icon(Icons.archive),
+            label: 'Arşiv',
           ),
         ],
       ),

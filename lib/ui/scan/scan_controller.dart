@@ -56,6 +56,24 @@ class ScanController extends ChangeNotifier {
   /// Son okutmanın sonucu; ekranda kalıcı olarak gösterilir.
   ScanOutcome? get last => _last;
 
+  String? _manualProjectNo;
+
+  /// Son çalışılan proje: son başarılı okutmanın ya da elle eklemenin proje
+  /// no'su. Manuel ekleme formu bunu hazır getirir; yoksa boş.
+  String get lastProjectNo => switch (_last) {
+        ScanSaved(:final entry) => entry.record.projectNo,
+        ScanDuplicate(:final projectNo) => projectNo,
+        _ => _manualProjectNo ?? '',
+      };
+
+  /// Elle eklenen kaydın proje no'sunu hatırlar.
+  void rememberManualProject(String projectNo) {
+    _manualProjectNo = projectNo;
+    // Eski bir okutma sonucu daha yeni elle eklemeyi gölgelemesin.
+    _last = null;
+    notifyListeners();
+  }
+
   Future<void> onDetected(String raw) async {
     final now = DateTime.now();
     final isRepeat =
